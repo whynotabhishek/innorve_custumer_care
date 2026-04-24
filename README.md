@@ -348,6 +348,7 @@ git push -u origin main
    - Output Directory: `dist`
 4. Set environment variables in Vercel:
    - `GEMINI_API_KEY` = your Gemini API key
+   - `VITE_API_BASE` = the public URL of your deployed backend, for example `https://your-backend.example.com`
 
 ### 3. Backend Deployment
 - This repository currently contains a static Vite frontend and a separate FastAPI backend.
