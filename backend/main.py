@@ -4,7 +4,7 @@ Horizon Community Credit Union
 Stack: FastAPI + keyword retrieval + Gemini
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -13,6 +13,8 @@ import google.generativeai as genai
 import uuid
 import os
 import re
+import time
+import httpx
 from dotenv import load_dotenv
 
 # ── LOAD ENV VARIABLES ────────────────────────────────────────────────────────
@@ -23,6 +25,10 @@ if not GEMINI_API_KEY:
     GEMINI_API_KEY = "missing"
 genai.configure(api_key=GEMINI_API_KEY)
 gemini = genai.GenerativeModel("gemini-2.0-flash-lite")
+
+ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY", "")
+if not ASSEMBLYAI_API_KEY:
+    print("[WARNING] ASSEMBLYAI_API_KEY not found in .env -- voice input will be disabled.")
 
 # ── LOAD KB (lightweight keyword index) ───────────────────────────────────────
 print("Loading knowledge base...")
@@ -522,9 +528,68 @@ async def seed():
         cases[c["conversation_id"]] = c
     return {"seeded": len(demo), "message": "Demo cases loaded."}
 
+# ── VOICE TRANSCRIPTION (AssemblyAI) ──────────────────────────────────────────
+@app.post("/api/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    """Upload audio, transcribe via AssemblyAI, return text."""
+    if not ASSEMBLYAI_API_KEY:
+        return {"error": "Voice input not configured — ASSEMBLYAI_API_KEY missing."}
+
+    headers = {"authorization": ASSEMBLYAI_API_KEY}
+
+    try:
+        audio_data = await file.read()
+        print(f"[VOICE] Received {len(audio_data)} bytes of audio")
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            # Step 1: Upload audio to AssemblyAI
+            upload_resp = await client.post(
+                "https://api.assemblyai.com/v2/upload",
+                headers=headers,
+                content=audio_data,
+            )
+            upload_resp.raise_for_status()
+            audio_url = upload_resp.json()["upload_url"]
+            print(f"[VOICE] Uploaded to AssemblyAI: {audio_url[:60]}...")
+
+            # Step 2: Request transcription
+            transcript_resp = await client.post(
+                "https://api.assemblyai.com/v2/transcript",
+                headers=headers,
+                json={"audio_url": audio_url, "language_code": "en"},
+            )
+            transcript_resp.raise_for_status()
+            transcript_id = transcript_resp.json()["id"]
+            print(f"[VOICE] Transcription started: {transcript_id}")
+
+            # Step 3: Poll until completed (max 30 seconds)
+            for _ in range(30):
+                poll_resp = await client.get(
+                    f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
+                    headers=headers,
+                )
+                poll_resp.raise_for_status()
+                result = poll_resp.json()
+
+                if result["status"] == "completed":
+                    text = result.get("text", "").strip()
+                    print(f"[VOICE] Transcription complete: '{text[:80]}...'")
+                    return {"text": text}
+                elif result["status"] == "error":
+                    print(f"[VOICE] Transcription error: {result.get('error')}")
+                    return {"error": "Transcription failed. Please try again."}
+
+                time.sleep(1)
+
+            return {"error": "Transcription timed out. Please try again."}
+
+    except Exception as e:
+        print(f"[VOICE] Error: {e}")
+        return {"error": f"Voice processing failed: {str(e)}"}
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "kb_documents": len(DOCUMENTS), "active_cases": len(cases)}
+    return {"status": "ok", "kb_documents": len(DOCUMENTS), "active_cases": len(cases), "voice_enabled": bool(ASSEMBLYAI_API_KEY)}
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 def _now():
