@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:admin": "vite --config vite.admin.config.js",
     "build": "vite build",
-    "build:admin": "vite build --config vite.admin.config.js",
+    "build:admin": "vite build --config vite.admin.config.js && node ./scripts/copy-admin-html.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

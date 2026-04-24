@@ -350,6 +350,16 @@ git push -u origin main
    - `GEMINI_API_KEY` = your Gemini API key
    - `VITE_API_BASE` = the public URL of your deployed backend, for example `https://your-backend.example.com`
 
+### 2b. Deploy Customer Chat to a second Vercel project
+1. Create a second project in Vercel and import the same GitHub repo.
+2. Use these settings:
+   - Framework Preset: `Other`
+   - Build Command: `npm run build:admin`
+   - Output Directory: `dist-admin`
+3. Set the same environment variables:
+   - `GEMINI_API_KEY`
+   - `VITE_API_BASE`
+
 ### 3. Backend Deployment
 - This repository currently contains a static Vite frontend and a separate FastAPI backend.
 - Vercel is configured here for the frontend only.
