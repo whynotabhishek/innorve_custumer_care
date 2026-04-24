@@ -1,0 +1,186 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --color-void: #030303;
+  --color-surface: #0A0A0A;
+  --color-surface-elevated: #111111;
+  --color-surface-hover: #1A1A1A;
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-light: rgba(255, 255, 255, 0.1);
+  --color-accent: #4F7CFF;
+  --color-accent-hover: #6B93FF;
+  --color-accent-glow: #6C5CE7;
+  --color-accent-soft: rgba(79, 124, 255, 0.15);
+  --color-text-primary: #E8E8E8;
+  --color-text-secondary: #888888;
+  --color-text-tertiary: #555555;
+  --color-danger: #FF4757;
+  --color-warning: #FFAA2C;
+  --color-success: #2ED573;
+
+  --color-glass: rgba(255, 255, 255, 0.03);
+  --color-glass-border: rgba(255, 255, 255, 0.06);
+  --color-glass-strong: rgba(255, 255, 255, 0.06);
+
+  --color-p1: #FF4757;
+  --color-p2: #FFAA2C;
+  --color-p3: #2ED573;
+}
+
+/* ── Global Resets ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-void);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  height: 100vh;
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Keyframe Animations ── */
+@keyframes aura-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(79, 124, 255, 0.12), 0 0 40px rgba(108, 92, 231, 0.06);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(79, 124, 255, 0.2), 0 0 60px rgba(108, 92, 231, 0.12);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes glow-breathe {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes recording-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 71, 87, 0);
+  }
+}
+
+@keyframes float-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gradient-shift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* ── Utility Classes ── */
+.glass {
+  background: var(--color-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-glass-border);
+}
+
+.glass-strong {
+  background: var(--color-glass-strong);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid var(--color-border-light);
+}
+
+.aura-avatar {
+  animation: aura-pulse 3s ease-in-out infinite;
+}
+
+.recording-btn {
+  animation: recording-pulse 1.5s ease-in-out infinite;
+}
+
+.shimmer-bg {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(79, 124, 255, 0.04) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* ── Input Bar Glass ── */
+.input-bar-glass {
+  background: rgba(3, 3, 3, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* ── Textarea Reset ── */
+textarea {
+  font-family: inherit;
+  resize: none;
+}
+
+/* ── Selection ── */
+::selection {
+  background: rgba(79, 124, 255, 0.3);
+  color: #fff;
+}
