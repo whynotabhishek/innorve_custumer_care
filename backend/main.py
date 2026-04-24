@@ -1,37 +1,47 @@
 """
 CreditAssist AI — Layer 2: AI Resolution Engine
 Horizon Community Credit Union
-Stack: FastAPI + LangChain + FAISS + Gemini
-
-"""
-CreditAssist AI — Layer 2: AI Resolution Engine
-Horizon Community Credit Union
-Stack: FastAPI + lightweight keyword retrieval
+Stack: FastAPI + keyword retrieval + Gemini
 """
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from pathlib import Path
 from typing import Optional, List
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
 from kb import DOCUMENTS
+import google.generativeai as genai
+import uuid
 import os
+import re
+from dotenv import load_dotenv
 
 # ── LOAD ENV VARIABLES ────────────────────────────────────────────────────────
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     print("[WARNING] GEMINI_API_KEY not found in .env -- LLM responses will use fallback mode.")
+    GEMINI_API_KEY = "missing"
+genai.configure(api_key=GEMINI_API_KEY)
+gemini = genai.GenerativeModel("gemini-2.0-flash-lite")
 
-# ── LOAD ENV VARIABLES ────────────────────────────────────────────────────────
-load_dotenv()
-
-# ── LOAD KB ───────────────────────────────────────────────────────────────────
+# ── LOAD KB (lightweight keyword index) ───────────────────────────────────────
 print("Loading knowledge base...")
-print(f"[OK] Knowledge base ready -- {len(DOCUMENTS)} documents loaded")
-embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-db = FAISS.from_documents(DOCUMENTS, embedding)
-print(f"[OK] Knowledge base ready -- {len(DOCUMENTS)} documents loaded")
+
+# Build a simple keyword index for each document
+KB_INDEX = []
+for doc in DOCUMENTS:
+    words = set(re.findall(r'\w+', doc.page_content.lower()))
+    category = doc.metadata.get("category", "")
+    title = doc.metadata.get("title", "")
+    title_words = set(re.findall(r'\w+', title.lower()))
+    KB_INDEX.append({
+        "doc": doc,
+        "words": words | title_words,
+        "category": category,
+        "title": title,
+    })
+
+print(f"[OK] Knowledge base ready -- {len(DOCUMENTS)} documents loaded (keyword index)")
 
 # ── FASTAPI APP ───────────────────────────────────────────────────────────────
 app = FastAPI(title="CreditAssist AI — Layer 2")
@@ -55,7 +65,6 @@ class ChatRequest(BaseModel):
     conversation_history: Optional[List[dict]] = []
 
 # ── STEP 1: INTENT CLASSIFICATION (AI-POWERED) ──────────────────────────────
-import json as _json
 
 INTENT_CLASSIFIER_PROMPT = """You are an intent classifier for a credit union customer support chatbot.
 
@@ -129,7 +138,6 @@ def classify_intent(query: str, conversation_history: list = None) -> str:
 def _keyword_classify_intent(query: str) -> str:
     """Keyword-based fallback classifier — used when Gemini API is unavailable."""
     q = query.lower().strip()
-    import re
     q_clean = re.sub(r'[^\w\s]', '', q).strip()
     words = q_clean.split()
 
@@ -173,19 +181,8 @@ def _keyword_classify_intent(query: str) -> str:
         return "dispute"
     elif any(w in q for w in ["fd", "fixed deposit", "interest rate", "savings", "balance", "minimum"]):
         return "policy"
-    scored_docs = []
-
-    for doc in DOCUMENTS:
-        text = f"{doc.metadata.get('title', '')} {doc.page_content}".lower()
-        score = sum(1 for word in query.lower().split() if word in text)
-        scored_docs.append((score, doc))
-
-    scored_docs.sort(key=lambda item: item[0], reverse=True)
-    top_docs = [doc for score, doc in scored_docs[:k] if score > 0]
-    if not top_docs:
-        top_docs = DOCUMENTS[:k]
-
-    return [{"content": d.page_content, "title": d.metadata["title"]} for d in top_docs]
+    elif any(w in q for w in ["complaint", "overcharged", "nobody", "unresolved", "escalate", "manager", "called twice"]):
+        return "complaint"
     else:
         return "general"
 
@@ -207,10 +204,51 @@ def detect_sentiment(message: str, history: List[dict]) -> tuple[str, int]:
     else:
         return "neutral", 2
 
-# ── STEP 3: RETRIEVE FROM KB ──────────────────────────────────────────────────
-def retrieve_docs(query: str, k: int = 3) -> list:
-    docs = db.similarity_search(query, k=k)
-    return [{"content": d.page_content, "title": d.metadata["title"]} for d in docs]
+# ── STEP 3: RETRIEVE FROM KB (keyword-based, no FAISS/torch) ─────────────────
+# Map intents to KB categories for direct matching
+INTENT_TO_CATEGORY = {
+    "loan": ["loans"],
+    "card": ["card"],
+    "account_update": ["account"],
+    "dispute": ["dispute"],
+    "policy": ["products", "account"],
+    "complaint": ["complaint"],
+}
+
+def retrieve_docs(query: str, intent: str = "general", k: int = 3) -> list:
+    """Lightweight keyword-based document retrieval — no ML models needed."""
+    query_words = set(re.findall(r'\w+', query.lower()))
+    scored = []
+
+    for entry in KB_INDEX:
+        score = 0
+        # Keyword overlap score
+        overlap = len(query_words & entry["words"])
+        score += overlap * 2
+
+        # Category boost: if intent maps to this doc's category
+        matching_categories = INTENT_TO_CATEGORY.get(intent, [])
+        if entry["category"] in matching_categories:
+            score += 10
+
+        # Title keyword boost
+        title_words = set(re.findall(r'\w+', entry["title"].lower()))
+        title_overlap = len(query_words & title_words)
+        score += title_overlap * 5
+
+        scored.append((score, entry))
+
+    # Sort by score descending, take top k
+    scored.sort(key=lambda x: x[0], reverse=True)
+    results = []
+    for score, entry in scored[:k]:
+        if score > 0:
+            results.append({
+                "content": entry["doc"].page_content,
+                "title": entry["title"],
+            })
+
+    return results
 
 # ── STEP 4: ESCALATION DECISION ───────────────────────────────────────────────
 def should_escalate(intent: str, sentiment_score: int, message: str, history: List[dict]) -> bool:
@@ -346,7 +384,7 @@ async def chat(req: ChatRequest):
                   f"loans, FDs, cards, transactions, or any other queries. "
                   f"How can I assist you today?")
     else:
-        docs            = retrieve_docs(req.message)
+        docs            = retrieve_docs(req.message, intent)
         escalating      = should_escalate(intent, score, req.message, req.conversation_history)
         answer          = generate_response(
                             req.message, req.member_name, intent,
@@ -487,10 +525,6 @@ async def seed():
 @app.get("/health")
 async def health():
     return {"status": "ok", "kb_documents": len(DOCUMENTS), "active_cases": len(cases)}
-
-frontend_dist = Path(__file__).resolve().parent.parent / "dist"
-if frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 def _now():
