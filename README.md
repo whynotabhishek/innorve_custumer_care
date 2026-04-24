@@ -350,22 +350,16 @@ git push -u origin main
    - `GEMINI_API_KEY` = your Gemini API key
    - `VITE_API_BASE` = the public URL of your deployed backend, for example `https://your-backend.example.com`
 
-### 2b. Deploy Customer Chat to a second Vercel project
-1. Create a second project in Vercel and import the same GitHub repo.
-2. Use these settings:
-   - Framework Preset: `Other`
-   - Build Command: `npm run build:admin`
-   - Output Directory: `dist-admin`
-3. Set the same environment variables:
-   - `GEMINI_API_KEY`
-   - `VITE_API_BASE`
+> Use a public backend URL such as `https://<app>.railway.app`. Do not use an internal host like `*.railway.internal`.
+>
+> This repository uses a single frontend app for both customer chat and staff case management. Staff users switch to the Staff mode on the same login screen and enter the secure passcode.
 
 ### 3. Backend Deployment
 - This repository currently contains a static Vite frontend and a separate FastAPI backend.
 - Vercel is configured here for the frontend only.
 - Deploy the backend separately to a Python-friendly host such as Render, Railway, Fly, or any VM with `uvicorn`.
 - Start the backend with:
-   ```bash
+```bash
 python -m pip install -r backend/requirements.txt
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
@@ -373,7 +367,6 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ### 4. Notes
 - `vercel.json` is configured to build the frontend from `dist`.
 - The backend is not deployed on Vercel in this setup because it requires a long-running FastAPI service.
-Loads 6 hardcoded demo cases (P1/P2/P3 mix) into the in-memory store.
 
 ---
 
@@ -399,7 +392,7 @@ Loads 6 hardcoded demo cases (P1/P2/P3 mix) into the in-memory store.
 | **Tailwind CSS v4** | Utility-first styling (via `@tailwindcss/vite` plugin) |
 | **Framer Motion** (`motion`) | Animations — message fade-in, sidebar slide, typing indicator |
 | **Lucide React** | Icon library (Sparkles, Send, Mic, Paperclip, etc.) |
-| **React Router DOM v7** | Client-side routing (`/` and `/admin-dashboard-secure`) |
+| **React Router DOM v7** | Client-side routing for customer chat and fallback routes |
 
 ---
 
@@ -455,10 +448,10 @@ Opens at `http://localhost:5173/`.
 1. Open `http://localhost:5173/`
 2. Enter your name and (optional) member ID → click "Start Chatting"
 3. Type a question like "What is the penalty for breaking my FD early?"
-4. The AI responds with KB-sourced information + metadata badges + "Did this resolve your issue?"
-5. Reply "Yes, thanks!" to mark the case as resolved, or continue the conversation
-6. Staff: Navigate to `/admin-dashboard-secure` and enter passcode `innorve2026`
-7. Click "Seed Demo Data" to populate sample cases for the dashboard demo
+6. The AI responds with KB-sourced information + metadata badges + "Did this resolve your issue?"
+7. Reply "Yes, thanks!" to mark the case as resolved, or continue the conversation
+8. Staff: choose the Staff mode on the login screen and enter passcode `innorve2026`
+9. Click "Seed Demo Data" to populate sample cases for the dashboard demo
 
 ---
 
@@ -472,8 +465,8 @@ Opens at `http://localhost:5173/`.
 | Frontend port | `vite.config.js` | `5173` |
 | Backend port | Uvicorn command | `8000` |
 | CORS | `backend/main.py` line 40 | `allow_origins=["*"]` |
-| Admin passcode | `src/components/AdminLogin.jsx` | `innorve2026` |
-| Dashboard route | `src/App.jsx` | `/admin-dashboard-secure` |
+| Staff passcode | `src/components/LoginScreen.jsx` | `innorve2026` |
+| Staff access | `src/App.jsx` | Shared login screen with Staff mode |
 
 ---
 
@@ -495,6 +488,6 @@ Opens at `http://localhost:5173/`.
 
 8. **State machine for case resolution** — Cases start as `open` and only transition to `resolved` when the user explicitly confirms ("Yes, thanks!"). The AI always asks "Did this resolve your issue?" to prompt confirmation. Denied or continued issues remain `open` or escalate.
 
-9. **Admin dashboard isolation** — The staff dashboard is on a hidden route (`/admin-dashboard-secure`) behind a passcode gate. No links to it exist in the member-facing UI.
+9. **Staff dashboard access** — The staff dashboard is available from the shared login screen. Staff mode is protected by a passcode gate, keeping the customer experience separate.
 
 10. **Environment variable security** — The Gemini API key is loaded from `backend/.env` via `python-dotenv`, never hardcoded. A `.env.example` template is provided, and `.env` is in `.gitignore`.

@@ -3,18 +3,18 @@ Horizon Community Credit Union — Knowledge Base
 10 documents covering all major issue types
 """
 
-from langchain_core.documents import Document
+from dataclasses import dataclass
+
+
+@dataclass
+class Document:
+    page_content: str
+    metadata: dict
 
 def add_kb_entry(title, content, category, faiss_db):
-    """Add a new KB entry and re-index it into FAISS immediately.
-
-    IMPORTANT: DOCUMENTS.append() alone does NOT update the FAISS index.
-    You MUST call faiss_db.add_documents([doc]) which re-embeds and inserts
-    into the live vector store.
-    """
+    """Add a new KB entry to the in-memory KB list."""
     doc = Document(page_content=content, metadata={"title": title, "category": category})
-    DOCUMENTS.append(doc)           # Keep the list in sync
-    faiss_db.add_documents([doc])   # CRITICAL: updates the live FAISS index
+    DOCUMENTS.append(doc)
     return doc
 
 

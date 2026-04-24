@@ -3,12 +3,17 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'motion/react';
 import LoginScreen from './components/LoginScreen';
 import ChatPage from './pages/ChatPage';
+import DashboardPage from './pages/DashboardPage';
 
 export default function App() {
   const [user, setUser] = useState(null);
 
-  const handleLogin = ({ name, memberId }) => {
-    setUser({ name, memberId });
+  const handleLogin = (userData) => {
+    setUser(userData);
+  };
+
+  const handleLogout = () => {
+    setUser(null);
   };
 
   if (!user) {
@@ -17,10 +22,14 @@ export default function App() {
 
   return (
     <AnimatePresence mode="wait">
-      <Routes>
-        <Route path="/" element={<ChatPage user={user} />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      {user.role === 'staff' ? (
+        <DashboardPage onLogout={handleLogout} />
+      ) : (
+        <Routes>
+          <Route path="/" element={<ChatPage user={user} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      )}
     </AnimatePresence>
   );
 }

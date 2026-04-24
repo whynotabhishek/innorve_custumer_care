@@ -2,31 +2,33 @@
 CreditAssist AI — Layer 2: AI Resolution Engine
 Horizon Community Credit Union
 Stack: FastAPI + LangChain + FAISS + Gemini
+
+"""
+CreditAssist AI — Layer 2: AI Resolution Engine
+Horizon Community Credit Union
+Stack: FastAPI + lightweight keyword retrieval
 """
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pathlib import Path
 from typing import Optional, List
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from kb import DOCUMENTS
-import google.generativeai as genai
-import uuid
 import os
-from dotenv import load_dotenv
 
 # ── LOAD ENV VARIABLES ────────────────────────────────────────────────────────
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     print("[WARNING] GEMINI_API_KEY not found in .env -- LLM responses will use fallback mode.")
-    GEMINI_API_KEY = "missing"
-genai.configure(api_key=GEMINI_API_KEY)
-gemini = genai.GenerativeModel("gemini-2.0-flash-lite")
 
-# ── LOAD KB INTO FAISS ────────────────────────────────────────────────────────
+# ── LOAD ENV VARIABLES ────────────────────────────────────────────────────────
+load_dotenv()
+
+# ── LOAD KB ───────────────────────────────────────────────────────────────────
 print("Loading knowledge base...")
+print(f"[OK] Knowledge base ready -- {len(DOCUMENTS)} documents loaded")
 embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 db = FAISS.from_documents(DOCUMENTS, embedding)
 print(f"[OK] Knowledge base ready -- {len(DOCUMENTS)} documents loaded")
@@ -52,27 +54,115 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     conversation_history: Optional[List[dict]] = []
 
-# ── STEP 1: INTENT CLASSIFICATION ────────────────────────────────────────────
-def classify_intent(query: str) -> str:
+# ── STEP 1: INTENT CLASSIFICATION (AI-POWERED) ──────────────────────────────
+import json as _json
+
+INTENT_CLASSIFIER_PROMPT = """You are an intent classifier for a credit union customer support chatbot.
+
+Analyze the user's message and classify it into EXACTLY ONE of these categories:
+- "greeting" — Any form of hello, hi, good morning, hey, howdy, how are you, or any casual/social opener with no actual support question
+- "confirmation" — User is confirming their issue is resolved (yes, thanks, that helped, perfect, etc.)
+- "denial" — User is saying their issue is NOT resolved (no, didn't help, still not working, etc.)
+- "loan" — Questions about loans, EMI, borrowing, personal/home/vehicle loans
+- "card" — Questions about debit/credit cards, blocked cards, PIN, ATM
+- "account_update" — Requests to update address, phone, name, KYC
+- "dispute" — Transaction disputes, fraud, unrecognised charges, refunds
+- "policy" — Questions about FD, interest rates, savings, account policies, balance
+- "complaint" — Complaints, escalation requests, overcharging, unresolved issues, wanting to speak to manager
+- "general" — Anything else that doesn't fit the above categories
+
+CONVERSATION HISTORY:
+{history}
+
+CURRENT MESSAGE: {message}
+
+RULES:
+1. Return ONLY the intent category as a single word (e.g. greeting). No quotes, no JSON, no explanation.
+2. If the message is purely social/casual with no support question, classify as "greeting".
+3. If the message starts with a greeting BUT also contains a support question (e.g. "hi, my card is blocked"), classify based on the support question, NOT as greeting.
+4. Be case-insensitive. Handle typos, slang, emoji, and informal language.
+"""
+
+def classify_intent(query: str, conversation_history: list = None) -> str:
+    """AI-powered intent classification using Gemini, with keyword fallback."""
+    try:
+        # Build minimal history context (last 4 turns)
+        history_text = "None"
+        if conversation_history:
+            recent = conversation_history[-4:]
+            history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in recent])
+
+        prompt = INTENT_CLASSIFIER_PROMPT.format(
+            history=history_text,
+            message=query
+        )
+
+        response = gemini.generate_content(prompt)
+        raw = response.text.strip().lower().strip('"').strip("'").strip()
+
+        # Validate the response is a known intent
+        valid_intents = {
+            "greeting", "confirmation", "denial",
+            "loan", "card", "account_update", "dispute",
+            "policy", "complaint", "general"
+        }
+
+        if raw in valid_intents:
+            print(f"[AI INTENT] '{query[:50]}' -> {raw}")
+            return raw
+
+        # If AI returned something unexpected, try to extract a valid intent from it
+        for intent in valid_intents:
+            if intent in raw:
+                print(f"[AI INTENT] '{query[:50]}' -> {intent} (extracted from '{raw}')")
+                return intent
+
+        # If AI response is completely unrecognizable, fall back
+        print(f"[WARN] AI returned unrecognized intent '{raw}', falling back to keyword classifier")
+        return _keyword_classify_intent(query)
+
+    except Exception as e:
+        print(f"[WARN] AI intent classification failed: {e}, falling back to keyword classifier")
+        return _keyword_classify_intent(query)
+
+
+def _keyword_classify_intent(query: str) -> str:
+    """Keyword-based fallback classifier — used when Gemini API is unavailable."""
     q = query.lower().strip()
-    # Check for greetings first
-    greeting_words = ["hi", "hello", "hey", "hii", "hiii", "good morning", "good afternoon",
-                      "good evening", "sup", "yo", "what's up", "howdy", "namaste",
-                      "hi bro", "hello bro", "hey there", "hi there"]
-    # Only match if the message is short (likely just a greeting)
-    if any(q == w or q.startswith(w + " ") or q.startswith(w + ",") or q.startswith(w + "!") for w in greeting_words) and len(q.split()) <= 5:
+    import re
+    q_clean = re.sub(r'[^\w\s]', '', q).strip()
+    words = q_clean.split()
+
+    if not words:
         return "greeting"
-    # Check for user confirmation ("yes that helped", "thanks", "resolved", etc.)
-    confirm_words = ["yes", "thanks", "thank you", "that helped", "that fixed", "resolved",
-                     "great", "perfect", "awesome", "got it", "understood", "clear now",
-                     "that works", "helpful", "sorted", "all good", "no more questions"]
-    if any(w in q for w in confirm_words) and len(q.split()) <= 15:
+
+    # Quick greeting check (simplified)
+    greeting_words = {
+        "hi", "hello", "hey", "hii", "hiii", "howdy", "namaste", "hola",
+        "sup", "yo", "heya", "hiya", "morning", "evening", "afternoon",
+        "gm", "greetings", "hai", "bonjour",
+    }
+    greeting_phrases = [
+        "good morning", "good afternoon", "good evening", "good night",
+        "how are you", "how r u", "hey there", "hi there", "hello there",
+    ]
+
+    if len(words) <= 3 and words[0] in greeting_words:
+        return "greeting"
+    if any(q_clean.startswith(p) for p in greeting_phrases) and len(words) <= 6:
+        return "greeting"
+
+    # Confirmation / Denial
+    confirm_words = ["yes", "thanks", "thank you", "that helped", "resolved",
+                     "great", "perfect", "awesome", "got it", "all good"]
+    if any(w in q for w in confirm_words) and len(words) <= 15:
         return "confirmation"
-    # Check for explicit denial / continued issue
     deny_words = ["no", "not resolved", "didn't help", "still", "not working",
-                  "didn't fix", "wrong", "incorrect", "that's not"]
-    if any(w in q for w in deny_words) and len(q.split()) <= 15:
+                  "didn't fix", "wrong", "incorrect"]
+    if any(w in q for w in deny_words) and len(words) <= 15:
         return "denial"
+
+    # Topic intents
     if any(w in q for w in ["loan", "emi", "borrow", "personal loan", "home loan", "vehicle"]):
         return "loan"
     elif any(w in q for w in ["card", "blocked", "unblock", "pin", "debit", "atm"]):
@@ -83,8 +173,19 @@ def classify_intent(query: str) -> str:
         return "dispute"
     elif any(w in q for w in ["fd", "fixed deposit", "interest rate", "savings", "balance", "minimum"]):
         return "policy"
-    elif any(w in q for w in ["complaint", "overcharged", "nobody", "unresolved", "escalate", "manager", "called twice"]):
-        return "complaint"
+    scored_docs = []
+
+    for doc in DOCUMENTS:
+        text = f"{doc.metadata.get('title', '')} {doc.page_content}".lower()
+        score = sum(1 for word in query.lower().split() if word in text)
+        scored_docs.append((score, doc))
+
+    scored_docs.sort(key=lambda item: item[0], reverse=True)
+    top_docs = [doc for score, doc in scored_docs[:k] if score > 0]
+    if not top_docs:
+        top_docs = DOCUMENTS[:k]
+
+    return [{"content": d.page_content, "title": d.metadata["title"]} for d in top_docs]
     else:
         return "general"
 
@@ -233,7 +334,7 @@ async def chat(req: ChatRequest):
     conversation_id = req.conversation_id or str(uuid.uuid4())
 
     # Run pipeline
-    intent          = classify_intent(req.message)
+    intent          = classify_intent(req.message, req.conversation_history)
     sentiment, score = detect_sentiment(req.message, req.conversation_history)
 
     # Short-circuit for greetings — no KB retrieval needed
@@ -386,6 +487,10 @@ async def seed():
 @app.get("/health")
 async def health():
     return {"status": "ok", "kb_documents": len(DOCUMENTS), "active_cases": len(cases)}
+
+frontend_dist = Path(__file__).resolve().parent.parent / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 def _now():

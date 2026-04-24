@@ -6,7 +6,7 @@ import CasesTable from '../components/dashboard/CasesTable';
 import CaseDetail from '../components/dashboard/CaseDetail';
 import AnalyticsPanel from '../components/dashboard/AnalyticsPanel';
 
-export default function DashboardPage() {
+export default function DashboardPage({ onLogout }) {
 
   const [cases, setCases] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -62,7 +62,7 @@ export default function DashboardPage() {
       >
         <div className="flex items-center gap-4">
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => (typeof onLogout === 'function' ? onLogout() : window.location.reload())}
             className="p-2 rounded-lg cursor-pointer transition-colors duration-150"
             style={{ color: '#888', background: 'transparent', border: 'none' }}
             onMouseEnter={(e) => {
